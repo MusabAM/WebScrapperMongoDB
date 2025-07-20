@@ -1,0 +1,32 @@
+# Python cache & compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+
+# Environment files
+.env
+
+# Log files
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE & editor folders
+.vscode/
+.idea/
+
+# ChromeDriver binaries (local driver path)
+chromedriver.exe
+chromedriver
+
+# Jupyter Notebook checkpoints (in case you add notebooks later)
+.ipynb_checkpoints/
+
+# Temporary files
+*.tmp
+*.bak
