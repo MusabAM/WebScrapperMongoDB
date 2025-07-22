@@ -36,11 +36,10 @@ Follow these steps to get the scraper up and running on your local machine.
 1.  **Clone the repository:**
 
     ```bash
-    git clone [https://github.com/yourusername/squareyards-real-estate-scraper.git](https://github.com/yourusername/squareyards-real-estate-scraper.git)
-    cd squareyards-real-estate-scraper
+    git clone [https://github.com/MusabAM/WebScrapperMongoDB.git](https://github.com/MusabAM/WebScrapperMongoDB.git)
+    cd WebScrapperMongoDB
     ```
-    *(Replace `yourusername` with your actual GitHub username or the repository owner's username)*
-
+    
 2.  **Create a virtual environment (recommended):**
 
     ```bash
