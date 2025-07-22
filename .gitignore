@@ -1,32 +1,35 @@
-# Python cache & compiled files
+```gitignore
+# Python
 __pycache__/
-*.py[cod]
-*$py.class
-
-# Virtual environment
+*.pyc
+*.pyo
+*.pyd
+.Python/
+env/
 venv/
+lib/
+include/
+bin/
+pip-log.txt
+pip-delete-this-arg.txt
 
-# Environment files
-.env
-
-# Log files
-*.log
-
-# OS generated files
+# OS
 .DS_Store
+.localized
+.project
+.settings
+.vs/
+*.user
+*.suo
+*.sln.docstates
+ehthumbs.db
 Thumbs.db
 
-# IDE & editor folders
-.vscode/
-.idea/
+# MyPy
+.mypy_cache/
 
-# ChromeDriver binaries (local driver path)
-chromedriver.exe
-chromedriver
+# Pytest
+.pytest_cache/
 
-# Jupyter Notebook checkpoints (in case you add notebooks later)
-.ipynb_checkpoints/
-
-# Temporary files
-*.tmp
-*.bak
+# Dotenv
+.env
