@@ -9,7 +9,6 @@ A robust Python-based web scraper designed to extract ready-to-move project data
 -   [Setup and Installation](#setup-and-installation)
 -   [Configuration](#configuration)
 -   [How to Run](#how-to-run)
--   [Output Data Structure](#output-data-structure)
 
 ## Features
 
