@@ -1,0 +1,31 @@
+{
+    "_id": ObjectId("65e2b7a9e7f4c3d2b1a0f9e8"),
+    "Apartment Name": "Prestige Elysian",
+    "Location": "Bannerghatta Road, Bangalore",
+    "Minimum Price": 10000000,
+    "Maximum Price": 15000000,
+    "Photo URL": "[https://img.squareyards.com/img/project/6429/project_image_1.jpeg](https://img.squareyards.com/img/project/6429/project_image_1.jpeg)",
+    "Listing URL": "[https://www.squareyards.com/prestige-elysian-bannerghatta-road-bangalore-project-6429](https://www.squareyards.com/prestige-elysian-bannerghatta-road-bangalore-project-6429)",
+    "Amenities": [
+        "24x7 Security",
+        "Power Backup",
+        "Landscaped Gardens",
+        "Gymnasium",
+        "Swimming Pool",
+        "Club House",
+        "Children's Play Area",
+        "Intercom",
+        "Lift(s)",
+        "Car Parking",
+        "Fire Fighting System",
+        "Rain Water Harvesting",
+        "Sewage Treatment Plant",
+        "Vaastu Compliant",
+        "Basketball Court",
+        "Badminton Court",
+        "Cycling & Jogging Track",
+        "Community Hall",
+        "Gated Community",
+        "Video Door Security"
+    ]
+}
