@@ -31,6 +31,37 @@ def convert_price_to_number(price_str):
         return 0
 
 
+# NEW FUNCTION: To extract latitude and longitude from HTML content
+def extract_lat_long_from_html(html_content):
+    """
+    Extracts latitude and longitude from specific hidden input fields
+    (with IDs 'hd_plat' and 'hd_plang') within the provided HTML content.
+    """
+    soup = BeautifulSoup(html_content, 'lxml')
+
+    latitude = "N/A"
+    longitude = "N/A"
+
+    lat_input = soup.find('input', id='hd_plat')
+    long_input = soup.find('input', id='hd_plang')
+
+    if lat_input and 'value' in lat_input.attrs:
+        latitude = lat_input['value'].strip()
+    else:
+        latitude = "N/A"
+        print("Unable to Extract Latitude Data")
+    if long_input and 'value' in long_input.attrs:
+        longitude = long_input['value'].strip()
+    else:
+        longitude = "N/A"
+        print("Unable to Extract Longitude Data")
+
+    return {
+        'latitude': latitude,
+        'longitude': longitude
+    }
+
+
 def scrape_detail_page_amenities(driver, detail_url):
     driver.get(detail_url)
     try:
@@ -39,7 +70,7 @@ def scrape_detail_page_amenities(driver, detail_url):
         )
     except Exception:
         print(f"Amenities list not available on Page / Timed out waiting for main amenities section on {detail_url}. Skipping amenities.")
-        return []
+        return [], "N/A", "N/A"
 
     soup = BeautifulSoup(driver.page_source, 'lxml')
     amenities_list = []
@@ -65,7 +96,6 @@ def scrape_detail_page_amenities(driver, detail_url):
             )
             print(f"Amenities modal is visible for {detail_url}")
 
-            # Re-parse the page source after the modal opens
             soup = BeautifulSoup(driver.page_source, 'lxml')
             amenities_modal_box = soup.find('div', id='amenitiesModalBox')
             if amenities_modal_box:
@@ -108,7 +138,14 @@ def scrape_detail_page_amenities(driver, detail_url):
                 if span_tag and 'More' not in span_tag.text:
                     amenities_list.append(span_tag.text.strip())
 
-    return amenities_list
+    current_page_html_for_lat_long = driver.page_source
+    lat_long_data = extract_lat_long_from_html(current_page_html_for_lat_long)
+    latitude = lat_long_data['latitude']
+    longitude = lat_long_data['longitude']
+
+    # NEW: Return amenities, latitude, and longitude
+    return amenities_list, latitude, longitude
+
 
 def scrape_listings_and_save_one_by_one_to_mongodb(html_content, driver, collection, start_time, run_duration_seconds,
                                                    scraped_count):
@@ -129,6 +166,15 @@ def scrape_listings_and_save_one_by_one_to_mongodb(html_content, driver, collect
             location = name_link_tag.find('span', class_='npProjectCity').text.strip() if name_link_tag and name_link_tag.find('span', class_='npProjectCity') else "N/A"
             listing_url = name_link_tag['href'].strip() if name_link_tag and 'href' in name_link_tag.attrs else "N/A"
 
+            query_by_url = {'Listing URL': listing_url}
+            existing_document_by_url = collection.find_one(query_by_url)
+
+            if existing_document_by_url:
+                visited_data += 1
+                print(f"Skipping duplicate by name: {apartment_name}. Already exists in DB.")
+                print("-" * 50)
+                continue
+
             price_box_tag = listing.find('div', class_='npPriceBox')
             price_text = price_box_tag.text.strip() if price_box_tag else "N/A"
 
@@ -144,12 +190,15 @@ def scrape_listings_and_save_one_by_one_to_mongodb(html_content, driver, collect
                 max_price_num = single_price
 
             photo_tag = listing.find('figure', class_='npTileFigure').find('img')
-            photo_url = photo_tag['src'].strip() if photo_tag and 'src' in photo_tag.attrs else "N/A"
+            photo_url = photo_tag['data-src'].strip() if photo_tag and 'data-src' in photo_tag.attrs else "N/A"
 
             amenities = []
+            latitude = "N/A"
+            longitude = "N/A"
+
             if listing_url and listing_url != "N/A":
                 print(f"Navigating to detail page: {listing_url}")
-                amenities = scrape_detail_page_amenities(driver, listing_url)
+                amenities, latitude, longitude = scrape_detail_page_amenities(driver, listing_url)
                 driver.back()
                 time.sleep(2)
 
@@ -160,35 +209,18 @@ def scrape_listings_and_save_one_by_one_to_mongodb(html_content, driver, collect
                 'Maximum Price': max_price_num,
                 'Photo URL': photo_url,
                 'Listing URL': listing_url,
-                'Amenities': amenities
+                'Amenities': amenities,
+                'Latitude': latitude,
+                'Longitude': longitude
             }
 
-            query = {}
-            if listing_url and listing_url != "N/A":
-                query = {'Listing URL': listing_url}
-            else:
-
-                query = {
-                    'Apartment Name': apartment_name,
-                    'Location': location,
-                    'Minimum Price': min_price_num,
-                    'Maximum Price': max_price_num
-                }
-
-            existing_document = collection.find_one(query)
-
-            if existing_document:
-                visited_data += 1
-                print(f"Skipping duplicate: {apartment_name} (URL: {listing_url}). Already exists.")
-            else:
-                value = collection.insert_one(apartment_data)
-                print(f"Inserted: {apartment_name} with ID: {value.inserted_id}")
-                scraped_count += 1
-                visited_data += 1
+            value = collection.insert_one(apartment_data)
+            print(f"Inserted: {apartment_name} with ID: {value.inserted_id}")
+            scraped_count += 1
+            visited_data += 1
 
             print(f"Visited Data in current Page: {visited_data}")
             print("-" * 50)
-
 
         except Exception as e:
             print(f"Skipping listing due to error: {e}")
@@ -200,9 +232,8 @@ def scrape_listings_and_save_one_by_one_to_mongodb(html_content, driver, collect
 if __name__ == "__main__":
     MONGO_URI = "mongodb+srv://<username>:<password>@cluster0.xkcr7jt.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
     DB_NAME = 'Svastha'
-    COLLECTION_NAME = 'Squareyard Data'
-
-
+    COLLECTION_NAME = 'Squareyard Data LL'
+    
     RUN_DURATION_HOURS = 1
     RUN_DURATION_SECONDS = RUN_DURATION_HOURS * 3600
 
@@ -222,6 +253,7 @@ if __name__ == "__main__":
 
     chrome_options = Options()
     chrome_options.add_argument("--start-maximized")
+    # chrome_options.add_argument("--headless")
 
     service = Service("C:/Users/musab/Downloads/chromedriver-win64/chromedriver-win64/chromedriver.exe")
     driver = webdriver.Chrome(service=service, options=chrome_options)
