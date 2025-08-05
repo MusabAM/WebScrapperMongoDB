@@ -1,4 +1,7 @@
+import requests
 from bs4 import BeautifulSoup
+import csv
+import os
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -12,6 +15,9 @@ from pymongo import MongoClient
 def convert_price_to_number(price_str):
     if not price_str:
         return 0
+    if 'PER SQ. FT' in price_str.upper():
+        price_str = price_str.upper().replace('PER SQ. FT', '').strip()
+
     price_str = price_str.replace('₹', '').replace(',', '').strip().upper()
     try:
         if 'CR' in price_str:
@@ -31,120 +37,130 @@ def convert_price_to_number(price_str):
         return 0
 
 
-# NEW FUNCTION: To extract latitude and longitude from HTML content
-def extract_lat_long_from_html(html_content):
-    """
-    Extracts latitude and longitude from specific hidden input fields
-    (with IDs 'hd_plat' and 'hd_plang') within the provided HTML content.
-    """
-    soup = BeautifulSoup(html_content, 'lxml')
+def convert_area_to_sqft(area_str):
+    if not area_str:
+        return {"value": "N/A", "unit": "N/A"}
 
+    parts = area_str.split()
+    if len(parts) < 2:
+        return {"value": "N/A", "unit": "N/A"}
+
+    try:
+        value = float(parts[0])
+        unit = " ".join(parts[1:]).strip()
+        if unit.upper() in ['ACRES']:
+            return {"value": value * 43560, "unit": "Sq. Ft"}
+        elif unit.upper() in ['SQ. FT.', 'SQ. FT', 'SQ.FT.']:
+            return {"value": value, "unit": "Sq. Ft"}
+        else:
+            return {"value": area_str, "unit": "N/A"}
+    except (ValueError, IndexError):
+        return {"value": area_str, "unit": "N/A"}
+
+
+def extract_lat_long_from_html(html_content):
+    soup = BeautifulSoup(html_content, 'lxml')
     latitude = "N/A"
     longitude = "N/A"
-
     lat_input = soup.find('input', id='hd_plat')
     long_input = soup.find('input', id='hd_plang')
-
     if lat_input and 'value' in lat_input.attrs:
-        latitude = lat_input['value'].strip()
-    else:
-        latitude = "N/A"
-        print("Unable to Extract Latitude Data")
+        latitude = float(lat_input['value'].strip())
     if long_input and 'value' in long_input.attrs:
-        longitude = long_input['value'].strip()
-    else:
-        longitude = "N/A"
-        print("Unable to Extract Longitude Data")
-
+        longitude = float(long_input['value'].strip())
     return {
         'latitude': latitude,
         'longitude': longitude
     }
 
 
-def scrape_detail_page_amenities(driver, detail_url):
-    driver.get(detail_url)
+def scrape_detail_page_info(detail_url):
     try:
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, 'amenities'))
-        )
-    except Exception:
-        print(f"Amenities list not available on Page / Timed out waiting for main amenities section on {detail_url}. Skipping amenities.")
-        return [], "N/A", "N/A"
+        print(f"Fetching data from: {detail_url}")
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(detail_url, headers=headers, timeout=10)
+        response.raise_for_status()
 
-    soup = BeautifulSoup(driver.page_source, 'lxml')
-    amenities_list = []
+        soup = BeautifulSoup(response.content, 'lxml')
 
-    more_amenities_button_present = False
-    try:
-        driver.find_element(By.ID, 'amenitiesModalBtn')
-        more_amenities_button_present = True
-    except:
-        pass
+        per_sqft_cost = "N/A"
+        num_units = "N/A"
+        total_area = "N/A"
+        amenities = []
+        latitude = "N/A"
+        longitude = "N/A"
 
-    if more_amenities_button_present:
-        print(f"Found 'More Amenities' button on {detail_url}. Attempting to click and scrape from modal.")
-        try:
-            more_amenities_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.ID, 'amenitiesModalBtn'))
-            )
-            driver.execute_script("arguments[0].click();", more_amenities_button)
-            time.sleep(2)
-
-            WebDriverWait(driver, 10).until(
-                EC.visibility_of_element_located((By.ID, 'amenitiesModalBox'))
-            )
-            print(f"Amenities modal is visible for {detail_url}")
-
-            soup = BeautifulSoup(driver.page_source, 'lxml')
-            amenities_modal_box = soup.find('div', id='amenitiesModalBox')
-            if amenities_modal_box:
-                accordion_items = amenities_modal_box.find_all('div', class_='accordion-item')
-                for item in accordion_items:
-                    amenities_table = item.find('table', class_='amenities-popup-table')
-                    if amenities_table:
-                        for row in amenities_table.find_all('tr'):
-                            for td in row.find_all('td'):
-                                amenity_span = td.find('span')
-                                if amenity_span:
-                                    amenities_list.append(amenity_span.text.strip())
-            else:
-                print(f"Amenities modal box (ID: amenitiesModalBox) not found after click simulation.")
-
+        per_sqft_input = soup.find('input', id='hd_perSqFt')
+        if per_sqft_input and 'value' in per_sqft_input.attrs and per_sqft_input['value'].strip():
             try:
-                close_button = driver.find_element(By.CSS_SELECTOR, '#amenitiesModalBox .modal-close.button')
-                driver.execute_script("arguments[0].click();", close_button)
-                time.sleep(1)
-                print(f"Closed amenities modal for {detail_url}")
-            except Exception as close_e:
-                print(f"Could not close amenities modal for {detail_url}. Error: {close_e}")
+                per_sqft_cost = float(per_sqft_input['value'].strip())
+            except ValueError:
+                per_sqft_cost = "N/A"
+        else:
+            per_sqft_tag = soup.find('span', class_='per-sqft')
+            if per_sqft_tag:
+                try:
+                    price_text = per_sqft_tag.text.strip().replace('₹', '').replace(',', '').replace('Per Sq. Ft',
+                                                                                                     '').strip()
+                    per_sqft_cost = float(price_text)
+                except ValueError:
+                    per_sqft_cost = "N/A"
 
-        except Exception as click_e:
-            print(f"Failed to click 'More Amenities' button or modal did not appear for {detail_url}. Error: {click_e}")
-            print("Attempting to scrape visible amenities directly from the page.")
-            amenities_list = []
+        num_units_span = soup.find('span', string='Number of Units')
+        if num_units_span:
+            num_units_strong = num_units_span.find_next_sibling('strong')
+            if num_units_strong:
+                try:
+                    num_units = int(num_units_strong.text.strip())
+                except (ValueError, TypeError):
+                    num_units = "N/A"
+
+        total_area_span = soup.find('span', string='Total area')
+        if total_area_span:
+            total_area_strong = total_area_span.find_next_sibling('strong')
+            if total_area_strong:
+                total_area = total_area_strong.text.strip()
+
+        amenities_modal_box = soup.find('div', id='amenitiesModalBox')
+        if amenities_modal_box:
+            accordion_items = amenities_modal_box.find_all('div', class_='accordion-item')
+            for item in accordion_items:
+                amenities_table = item.find('table', class_='amenities-popup-table')
+                if amenities_table:
+                    for row in amenities_table.find_all('tr'):
+                        for td in row.find_all('td'):
+                            amenity_span = td.find('span')
+                            if amenity_span:
+                                amenities.append(amenity_span.text.strip())
+        else:
             amenities_list_box = soup.find('div', class_='amenities-list-box')
             if amenities_list_box:
                 for li in amenities_list_box.find_all('li'):
                     span_tag = li.find('span')
                     if span_tag and 'More' not in span_tag.text:
-                        amenities_list.append(span_tag.text.strip())
-    else:
-        print(f"No 'More Amenities' button found on {detail_url}. Scraping available amenities directly.")
-        amenities_list_box = soup.find('div', class_='amenities-list-box')
-        if amenities_list_box:
-            for li in amenities_list_box.find_all('li'):
-                span_tag = li.find('span')
-                if span_tag and 'More' not in span_tag.text:
-                    amenities_list.append(span_tag.text.strip())
+                        amenities.append(span_tag.text.strip())
 
-    current_page_html_for_lat_long = driver.page_source
-    lat_long_data = extract_lat_long_from_html(current_page_html_for_lat_long)
-    latitude = lat_long_data['latitude']
-    longitude = lat_long_data['longitude']
+        lat_long_data = extract_lat_long_from_html(soup.prettify())
+        latitude = lat_long_data['latitude']
+        longitude = lat_long_data['longitude']
 
-    # NEW: Return amenities, latitude, and longitude
-    return amenities_list, latitude, longitude
+        return {
+            'per_sqft_cost': per_sqft_cost,
+            'num_units': num_units,
+            'total_area': total_area,
+            'amenities': amenities,
+            'latitude': latitude,
+            'longitude': longitude
+        }
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching the page {detail_url}: {e}")
+        return None
+    except Exception as e:
+        print(f"An error occurred during scraping {detail_url}: {e}")
+        return None
 
 
 def scrape_listings_and_save_one_by_one_to_mongodb(html_content, driver, collection, start_time, run_duration_seconds,
@@ -158,12 +174,15 @@ def scrape_listings_and_save_one_by_one_to_mongodb(html_content, driver, collect
         elapsed_time = time.time() - start_time
         if elapsed_time > run_duration_seconds:
             print(f"Time limit of {run_duration_seconds / 60} minutes reached. Stopping individual listing processing.")
-            return scraped_count, True, visited_data
+            return True, visited_data, scraped_count
 
         try:
             name_link_tag = listing.find('h2', class_='npProjectName').find('a')
-            apartment_name = name_link_tag.find('strong').text.strip() if name_link_tag and name_link_tag.find('strong') else "N/A"
-            location = name_link_tag.find('span', class_='npProjectCity').text.strip() if name_link_tag and name_link_tag.find('span', class_='npProjectCity') else "N/A"
+            apartment_name = name_link_tag.find('strong').text.strip() if name_link_tag and name_link_tag.find(
+                'strong') else "N/A"
+            location = name_link_tag.find('span',
+                                          class_='npProjectCity').text.strip() if name_link_tag and name_link_tag.find(
+                'span', class_='npProjectCity') else "N/A"
             listing_url = name_link_tag['href'].strip() if name_link_tag and 'href' in name_link_tag.attrs else "N/A"
 
             query_by_url = {'Listing URL': listing_url}
@@ -195,18 +214,36 @@ def scrape_listings_and_save_one_by_one_to_mongodb(html_content, driver, collect
             amenities = []
             latitude = "N/A"
             longitude = "N/A"
+            per_sqft_cost = "N/A"
+            num_units = "N/A"
+            total_area = "N/A"
 
             if listing_url and listing_url != "N/A":
-                print(f"Navigating to detail page: {listing_url}")
-                amenities, latitude, longitude = scrape_detail_page_amenities(driver, listing_url)
-                driver.back()
-                time.sleep(2)
+                if not listing_url.startswith('http'):
+                    full_url = "https://www.squareyards.com" + listing_url
+                else:
+                    full_url = listing_url
+
+                print(f"Scraping details for: {full_url}")
+
+                detail_data = scrape_detail_page_info(full_url)
+
+                if detail_data:
+                    amenities = detail_data['amenities']
+                    latitude = detail_data['latitude']
+                    longitude = detail_data['longitude']
+                    per_sqft_cost = detail_data['per_sqft_cost']
+                    num_units = detail_data['num_units']
+                    total_area = detail_data['total_area']
 
             apartment_data = {
                 'Apartment Name': apartment_name,
                 'Location': location,
                 'Minimum Price': min_price_num,
                 'Maximum Price': max_price_num,
+                'Per Sqft Cost': per_sqft_cost,
+                'Number of Units': num_units,
+                'Total Area': total_area,
                 'Photo URL': photo_url,
                 'Listing URL': listing_url,
                 'Amenities': amenities,
@@ -227,14 +264,15 @@ def scrape_listings_and_save_one_by_one_to_mongodb(html_content, driver, collect
             print("-" * 50)
             continue
 
-    return scraped_count, False, visited_data
+    return False, visited_data, scraped_count
+
 
 if __name__ == "__main__":
-    MONGO_URI = "mongodb+srv://<username>:<password>@cluster0.xkcr7jt.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-    DB_NAME = 'Svastha'
-    COLLECTION_NAME = 'Squareyard Data LL'
-    
-    RUN_DURATION_HOURS = 1
+    MONGO_URI = "mongodb+srv://musab:Good_Luck2025@cluster0.1zk9pu5.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+    DB_NAME = 'ccube_research'
+    COLLECTION_NAME = 'apartment'
+
+    RUN_DURATION_HOURS = 3
     RUN_DURATION_SECONDS = RUN_DURATION_HOURS * 3600
 
     VISITED_DATA = 0
@@ -254,7 +292,6 @@ if __name__ == "__main__":
     chrome_options = Options()
     chrome_options.add_argument("--start-maximized")
     # chrome_options.add_argument("--headless")
-
     service = Service("C:/Users/musab/Downloads/chromedriver-win64/chromedriver-win64/chromedriver.exe")
     driver = webdriver.Chrome(service=service, options=chrome_options)
 
@@ -264,7 +301,7 @@ if __name__ == "__main__":
 
     start_time = time.time()
     page_number = 1
-    max_pages = 50 # Set a reasonable limit to avoid infinite loops, adjust as needed
+    max_pages = 200  # Set a reasonable limit to avoid infinite loops, adjust as needed
     scraped_count = 0
     stop_scraping = False
 
@@ -291,7 +328,7 @@ if __name__ == "__main__":
 
         print(f"Total Visited Data: {VISITED_DATA}")
 
-        scraped_count, stop_flag_from_function, visited_data_on_page = scrape_listings_and_save_one_by_one_to_mongodb(
+        stop_flag_from_function, visited_data_on_page, scraped_count = scrape_listings_and_save_one_by_one_to_mongodb(
             current_page_html, driver, collection, start_time, RUN_DURATION_SECONDS, scraped_count
         )
 
