@@ -268,7 +268,7 @@ def scrape_listings_and_save_one_by_one_to_mongodb(html_content, driver, collect
 
 
 if __name__ == "__main__":
-    MONGO_URI = "mongodb+srv://musab:Good_Luck2025@cluster0.1zk9pu5.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+    MONGO_URI = "mongodb+srv://<username>:<password>@cluster0.1zk9pu5.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0" # <-- Change Password and Username
     DB_NAME = 'ccube_research'
     COLLECTION_NAME = 'apartment'
 
