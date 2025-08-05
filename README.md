@@ -13,7 +13,7 @@ A robust Python-based web scraper designed to extract ready-to-move project data
 ## Features
 
 * **Dynamic Content Handling**: Utilizes Selenium to interact with the webpage, scroll, and handle JavaScript-loaded content.
-* **Detailed Data Extraction**: Scrapes essential information such as apartment names, locations, price ranges, photo URLs, listing URLs, Location Coordinates, and comprehensive amenities.
+* **Detailed Data Extraction**: Scrapes essential information such as apartment names, locations, price ranges, photo URLs, listing URLs, Location Coordinates, Cost Per Sqrft, No. of Units, Total Area and comprehensive amenities.
      * **Sidenote on Price Data**: In the scraped price data, a value of `-1` for either Minimum Price or Maximum Price indicates that the original listing displayed "Price On Request" rather than a specific numeric value.
 * **Pagination Support**: Automates navigation through multiple search results pages to gather extensive data.
 * **Amenity Scraping**: Implements advanced logic to open and scrape amenities from modal pop-ups on individual detail pages.
